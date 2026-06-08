@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>X-Tweet-Analyzer</title>
+  <style>
+    :root {
+      --bg: #0f1117; --surface: #1a1d2e; --surface2: #252838;
+      --accent: #1d9bf0; --accent2: #7856ff; --success: #00ba7c;
+      --warning: #f4a836; --danger: #f4212e;
+      --text: #e7e9ea; --text2: #71767b; --border: #2f3336; --radius: 12px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+    header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 16px 24px; display: flex; align-items: center; gap: 16px; position: sticky; top: 0; z-index: 100; }
+    .logo { font-size: 32px; }
+    header h1 { font-size: 1.4rem; font-weight: 800; }
+    header h1 span { color: var(--accent); }
+    header p { font-size: 0.8rem; color: var(--text2); }
+    .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+    .grid { display: grid; grid-template-columns: 380px 1fr; gap: 24px; }
+    @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 20px; }
+    .card-title { font-size: 0.85rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text2); margin-bottom: 16px; }
+    .input-group { margin-bottom: 14px; }
+    label { display: block; font-size: 0.85rem; color: var(--text2); margin-bottom: 6px; }
+    input, select { width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; color: var(--text); font-size: 0.95rem; transition: border-color 0.2s; }
+    input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(29,155,240,0.15); }
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: 20px; border: none; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+    .btn-primary { background: var(--accent); color: white; width: 100%; justify-content: center; font-size: 1rem; padding: 12px; border-radius: 24px; }
+    .btn-primary:hover { background: #1a8cd8; transform: translateY(-1px); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+    .btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text); padding: 7px 14px; font-size: 0.8rem; border-radius: 8px; }
+    .btn-outline:hover { background: var(--surface2); }
+    .btn-success { background: var(--success); color: white; padding: 7px 14px; font-size: 0.8rem; border-radius: 8px; }
+    .stats-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
+    .stat-card { background: var(--surface2); border-radius: 10px; padding: 14px; text-align: center; border: 1px solid var(--border); }
+    .stat-value { font-size: 1.8rem; font-weight: 800; display: block; }
+    .stat-label { font-size: 0.7rem; color: var(--text2); text-transform: uppercase; }
+    .stat-original { color: var(--accent); } .stat-reply { color: var(--success); }
+    .stat-retweet { color: var(--warning); } .stat-total { color: var(--accent2); }
+    .chart-bar { display: flex; height: 16px; border-radius: 8px; overflow: hidden; margin: 8px 0; }
+    .chart-segment { height: 100%; transition: width 1s ease; }
+    .chart-legend { display: flex; gap: 12px; font-size: 0.75rem; flex-wrap: wrap; }
+    .legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 3px; }
+    .tabs { display: flex; gap: 4px; margin-bottom: 14px; border-bottom: 1px solid var(--border); }
+    .tab { padding: 8px 14px; border: none; background: transparent; color: var(--text2); cursor: pointer; font-size: 0.85rem; font-weight: 600; border-bottom: 2px solid transparent; margin-bottom: -1px; transition: all 0.2s; }
+    .tab:hover { color: var(--text); background: var(--surface2); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+    .tweet-card { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; cursor: pointer; transition: border-color 0.2s, transform 0.2s; }
+    .tweet-card:hover { border-color: var(--accent); transform: translateX(3px); }
+    .tweet-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 10px; font-weight: 700; text-transform: uppercase; }
+    .badge-original { background: rgba(29,155,240,0.2); color: var(--accent); }
+    .badge-reply { background: rgba(0,186,124,0.2); color: var(--success); }
+    .badge-retweet { background: rgba(244,168,54,0.2); color: var(--warning); }
+    .tweet-date { font-size: 0.75rem; color: var(--text2); margin-left: auto; }
+    .tweet-content { font-size: 0.9rem; line-height: 1.5; margin-bottom: 10px; word-break: break-word; }
+    .tweet-meta { font-size: 0.8rem; color: var(--text2); padding: 5px 8px; background: var(--bg); border-radius: 6px; margin-bottom: 8px; border-left: 3px solid var(--success); }
+    .tweet-metrics { display: flex; gap: 12px; font-size: 0.78rem; color: var(--text2); }
+    .hashtag-chip { display: inline-block; background: rgba(120,86,255,0.15); color: var(--accent2); border-radius: 10px; padding: 1px 8px; font-size: 0.72rem; margin: 1px; }
+    .search-bar { display: flex; gap: 8px; margin-bottom: 14px; }
+    .search-bar input { flex: 1; }
+    .export-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .progress-container { display: none; margin-top: 14px; }
+    .progress-bar { height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden; }
+    .progress-fill { height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent2)); width: 0%; transition: width 0.3s ease; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.7; } }
+    .progress-text { font-size: 0.8rem; color: var(--text2); margin-top: 6px; }
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--text2); }
+    .empty-state .emoji { font-size: 3.5rem; margin-bottom: 14px; }
+    .empty-state h3 { font-size: 1.1rem; color: var(--text); margin-bottom: 6px; }
+    .spinner { width: 20px; height: 20px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; display: inline-block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .toast { position: fixed; bottom: 24px; right: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 18px; font-size: 0.85rem; z-index: 999; animation: slideIn 0.3s ease; }
+    .toast.success { border-color: var(--success); color: var(--success); }
+    .toast.error { border-color: var(--danger); color: var(--danger); }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: none; opacity: 1; } }
+    .pagination { display: flex; justify-content: center; gap: 8px; margin-top: 16px; }
+    .page-btn { padding: 5px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); cursor: pointer; font-size: 0.8rem; }
+    .page-btn:hover { border-color: var(--accent); }
+    .user-item { padding: 10px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: background 0.15s; }
+    .user-item:hover { background: var(--surface2); }
+    ::-webkit-scrollbar { width: 5px; } ::-webkit-scrollbar-track { background: var(--bg); } ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  </style>
+</head>
+<body>
+<header>
+  <div class="logo">🐦</div>
+  <div><h1>X-Tweet-<span>Analyzer</span></h1><p>Twitter/X Profile Explorer & Tweet Classifier</p></div>
+</header>
+<div class="container">
+  <div class="grid">
+    <div>
+      <div class="card">
+        <div class="card-title">🔍 Scrape Profile</div>
+        <div class="input-group">
+          <label>Username or URL</label>
+          <input type="text" id="usernameInput" placeholder="@username or https://x.com/..." />
+        </div>
+        <div class="input-group">
+          <label>Limit (tweets, blank = all)</label>
+          <input type="number" id="limitInput" placeholder="e.g. 1000" min="1" />
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div class="input-group"><label>Since</label><input type="date" id="sinceInput" /></div>
+          <div class="input-group"><label>Until</label><input type="date" id="untilInput" /></div>
+        </div>
+        <button class="btn btn-primary" onclick="startScrape()" id="scrapeBtn">🚀 Start Scraping</button>
+        <div class="progress-container" id="progressContainer">
+          <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+          <div class="progress-text" id="progressText">Initializing...</div>
+        </div>
+      </div>
+      <div class="card" id="statsCard" style="display:none">
+        <div class="card-title">📊 Statistics</div>
+        <div class="stats-grid">
+          <div class="stat-card"><span class="stat-value stat-total" id="statTotal">0</span><span class="stat-label">Total</span></div>
+          <div class="stat-card"><span class="stat-value stat-original" id="statOriginal">0</span><span class="stat-label">✍️ Originals</span></div>
+          <div class="stat-card"><span class="stat-value stat-reply" id="statReply">0</span><span class="stat-label">💬 Replies</span></div>
+          <div class="stat-card"><span class="stat-value stat-retweet" id="statRetweet">0</span><span class="stat-label">🔁 Retweets</span></div>
+        </div>
+        <div class="chart-bar">
+          <div class="chart-segment" id="segOriginal" style="background:var(--accent)"></div>
+          <div class="chart-segment" id="segReply" style="background:var(--success)"></div>
+          <div class="chart-segment" id="segRetweet" style="background:var(--warning)"></div>
+        </div>
+        <div class="chart-legend">
+          <span><span class="legend-dot" style="background:var(--accent)"></span>Original</span>
+          <span><span class="legend-dot" style="background:var(--success)"></span>Reply</span>
+          <span><span class="legend-dot" style="background:var(--warning)"></span>Retweet</span>
+        </div>
+        <div id="hashtagsSection" style="display:none;margin-top:12px">
+          <div class="card-title">🏷️ Top Hashtags</div>
+          <div id="hashtagsList"></div>
+        </div>
+        <div class="card-title" style="margin-top:14px">📁 Export</div>
+        <div class="export-row">
+          <button class="btn btn-outline" onclick="exportTweets('json')">⬇️ JSON</button>
+          <button class="btn btn-outline" onclick="exportTweets('csv')">⬇️ CSV</button>
+          <button class="btn btn-outline" onclick="exportTweets('markdown')">⬇️ Markdown</button>
+          <button class="btn btn-success" onclick="exportTweets('all')">⬇️ All</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-title">👥 Scraped Profiles</div>
+        <div id="usersList"><div style="color:var(--text2);font-size:0.85rem">Loading...</div></div>
+      </div>
+    </div>
+    <div class="card" style="margin-bottom:0">
+      <div id="tweetSection">
+        <div class="empty-state">
+          <div class="emoji">🔍</div>
+          <h3>Search a Profile</h3>
+          <p>Enter a username or X/Twitter URL to start analyzing their tweets.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+const API = '';
+let currentUser = null, currentOffset = 0, currentCategory = 'all';
+let pollInterval = null;
+loadUsers();
+
+async function loadUsers() {
+  try {
+    const r = await fetch(API + '/api/users');
+    const d = await r.json();
+    const list = document.getElementById('usersList');
+    if (!d.users || !d.users.length) {
+      list.innerHTML = '<div style="color:var(--text2);font-size:0.85rem">No profiles scraped yet</div>';
+      return;
+    }
+    list.innerHTML = d.users.map(u => `<div class="user-item" onclick="loadProfile('${u}')"><span style="font-size:1.3rem">👤</span><div><div style="font-weight:600">@${u}</div><div style="font-size:0.72rem;color:var(--text2)">Click to view</div></div></div>`).join('');
+  } catch(e) {}
+}
+
+async function startScrape() {
+  const username = document.getElementById('usernameInput').value.trim();
+  if (!username) { showToast('Enter a username', 'error'); return; }
+  const btn = document.getElementById('scrapeBtn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Starting...';
+  document.getElementById('progressContainer').style.display = 'block';
+  document.getElementById('progressFill').style.width = '10%';
+  document.getElementById('progressText').textContent = 'Connecting...';
+  try {
+    const r = await fetch(API + '/api/scrape', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        username: username.replace(/^@/, '').replace(/.*[xt]\.com\//, ''),
+        limit: document.getElementById('limitInput').value ? parseInt(document.getElementById('limitInput').value) : null,
+        since: document.getElementById('sinceInput').value || null,
+        until: document.getElementById('untilInput').value || null,
+      })
+    });
+    const d = await r.json();
+    pollScrapeStatus(d.username || username.replace(/^@/,''));
+  } catch(e) {
+    showToast('Error: ' + e.message, 'error');
+    btn.disabled = false; btn.innerHTML = '🚀 Start Scraping';
+    document.getElementById('progressContainer').style.display = 'none';
+  }
+}
+
+function pollScrapeStatus(username) {
+  if (pollInterval) clearInterval(pollInterval);
+  pollInterval = setInterval(async () => {
+    try {
+      const r = await fetch(API + `/api/scrape/status/${username}`);
+      const s = await r.json();
+      if (s.total) {
+        document.getElementById('progressText').textContent = `Scraped ${s.total} tweets`;
+        document.getElementById('progressFill').style.width = Math.min(90, 20 + s.total * 0.01) + '%';
+      }
+      if (s.status === 'completed') {
+        clearInterval(pollInterval);
+        document.getElementById('progressFill').style.width = '100%';
+        document.getElementById('progressText').textContent = `✅ Done! ${s.total} tweets scraped.`;
+        setTimeout(() => {
+          document.getElementById('progressContainer').style.display = 'none';
+          const btn = document.getElementById('scrapeBtn');
+          btn.disabled = false; btn.innerHTML = '🚀 Start Scraping';
+          loadUsers(); loadProfile(username);
+          showToast(`✅ Scraped ${s.total} tweets from @${username}`, 'success');
+        }, 1500);
+      } else if (s.status === 'error') {
+        clearInterval(pollInterval);
+        showToast('Error: ' + s.error, 'error');
+        document.getElementById('scrapeBtn').disabled = false;
+        document.getElementById('scrapeBtn').innerHTML = '🚀 Start Scraping';
+        document.getElementById('progressContainer').style.display = 'none';
+      }
+    } catch(e) {}
+  }, 1500);
+}
+
+async function loadProfile(username) {
+  currentUser = username; currentOffset = 0; currentCategory = 'all';
+  try {
+    const r = await fetch(API + `/api/stats/${username}`);
+    const d = await r.json();
+    updateStats(d.stats, d.top_hashtags);
+  } catch(e) {}
+  loadTweets();
+}
+
+function updateStats(s, hashtags) {
+  if (!s) return;
+  document.getElementById('statsCard').style.display = 'block';
+  const total = s.total || 0;
+  document.getElementById('statTotal').textContent = total.toLocaleString();
+  document.getElementById('statOriginal').textContent = (s.originals || 0).toLocaleString();
+  document.getElementById('statReply').textContent = (s.replies || 0).toLocaleString();
+  document.getElementById('statRetweet').textContent = (s.retweets || 0).toLocaleString();
+  if (total > 0) {
+    document.getElementById('segOriginal').style.width = (s.originals||0)/total*100 + '%';
+    document.getElementById('segReply').style.width = (s.replies||0)/total*100 + '%';
+    document.getElementById('segRetweet').style.width = (s.retweets||0)/total*100 + '%';
+  }
+  if (hashtags && hashtags.length) {
+    document.getElementById('hashtagsSection').style.display = 'block';
+    document.getElementById('hashtagsList').innerHTML = hashtags.map(t => `<span class="hashtag-chip">#${t.hashtag} (${t.count})</span>`).join('');
+  }
+}
+
+async function loadTweets(category = currentCategory, offset = 0) {
+  currentCategory = category; currentOffset = offset;
+  if (!currentUser) return;
+  const search = document.getElementById('searchInput')?.value || '';
+  const url = `${API}/api/tweets/${currentUser}?category=${category}&limit=20&offset=${offset}${search ? '&search='+encodeURIComponent(search) : ''}`;
+  const section = document.getElementById('tweetSection');
+  section.innerHTML = '<div style="text-align:center;padding:40px"><div class="spinner"></div></div>';
+  try {
+    const r = await fetch(url);
+    const d = await r.json();
+    renderTweets(d, category);
+  } catch(e) { section.innerHTML = '<div style="color:var(--danger);padding:20px">Error loading tweets</div>'; }
+}
+
+function renderTweets(data, category) {
+  const section = document.getElementById('tweetSection');
+  const tabs = ['all','original','reply','retweet'];
+  const labels = {all:'📋 All', original:'✍️ Original', reply:'💬 Replies', retweet:'🔁 Retweets'};
+  let html = `
+    <div style="margin-bottom:12px;display:flex;justify-content:space-between;align-items:center">
+      <h2 style="font-size:1.1rem">@${currentUser}</h2>
+    </div>
+    <div class="tabs">${tabs.map(t=>`<button class="tab ${t===category?'active':''}" onclick="loadTweets('${t}',0)">${labels[t]}</button>`).join('')}</div>
+    <div class="search-bar"><input type="text" id="searchInput" placeholder="🔍 Search..." onkeyup="if(event.key==='Enter')loadTweets()" /><button class="btn btn-outline" onclick="loadTweets()">Go</button></div>
+  `;
+  if (!data.tweets || !data.tweets.length) {
+    html += `<div class="empty-state"><div class="emoji">🌵</div><h3>No tweets</h3><p>No ${category} tweets found</p></div>`;
+  } else {
+    for (const t of data.tweets) {
+      const date = new Date(t.date).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});
+      const bc = {original:'badge-original',reply:'badge-reply',retweet:'badge-retweet'}[t.category]||'';
+      let meta = '';
+      if (t.replied_to_user) meta += `<div class="tweet-meta">↩️ Replying to @${t.replied_to_user}</div>`;
+      if (t.retweeted_from_user) meta += `<div class="tweet-meta" style="border-color:var(--warning)">🔁 From @${t.retweeted_from_user}</div>`;
+      let tags = []; try { tags = JSON.parse(t.hashtags||'[]'); } catch(e) {}
+      html += `
+        <div class="tweet-card" onclick="window.open('${t.url}','_blank')">
+          <div class="tweet-header"><span class="badge ${bc}">${t.category}</span><span class="tweet-date">${date}</span></div>
+          ${meta}
+          <div class="tweet-content">${esc(t.content)}</div>
+          ${tags.length ? '<div>'+tags.map(h=>`<span class="hashtag-chip">#${h}</span>`).join('')+'</div>' : ''}
+          <div class="tweet-metrics"><span>❤️ ${(t.like_count||0).toLocaleString()}</span><span>🔁 ${(t.retweet_count||0).toLocaleString()}</span><span>💬 ${(t.reply_count||0).toLocaleString()}</span><span>👁️ ${(t.view_count||0).toLocaleString()}</span></div>
+        </div>`;
+    }
+    html += `<div class="pagination">
+      ${currentOffset>0?`<button class="page-btn" onclick="loadTweets('${category}',${currentOffset-20})">← Prev</button>`:''}
+      <span style="padding:5px 12px;font-size:0.8rem;color:var(--text2)">Page ${Math.floor(currentOffset/20)+1}</span>
+      ${data.count>=20?`<button class="page-btn" onclick="loadTweets('${category}',${currentOffset+20})">Next →</button>`:''}
+    </div>`;
+  }
+  section.innerHTML = html;
+}
+
+function esc(s) { return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function exportTweets(fmt) {
+  if (!currentUser) { showToast('Select a profile first', 'error'); return; }
+  try {
+    await fetch(`${API}/api/export/${currentUser}?format=${fmt}`);
+    showToast(`✅ Exported ${fmt.toUpperCase()}!`, 'success');
+  } catch(e) { showToast('Export error: '+e.message, 'error'); }
+}
+
+function showToast(msg, type='') {
+  const t = document.createElement('div');
+  t.className = `toast ${type}`; t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
+</script>
+</body>
+</html>
