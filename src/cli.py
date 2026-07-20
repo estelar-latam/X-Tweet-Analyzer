@@ -13,21 +13,25 @@ Usage:
 """
 
 import asyncio
-import logging
 from datetime import datetime
-from pathlib import Path
-from typing import Optional
 
 import click
 from rich.console import Console
-from rich.table import Table
-from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn
 from rich.panel import Panel
+from rich.progress import (
+    BarColumn,
+    Progress,
+    SpinnerColumn,
+    TaskProgressColumn,
+    TextColumn,
+)
+from rich.table import Table
 
 from .config import Config
 from .database import Database
-from .scraper import XScraper
 from .exporter import TweetExporter
+from .scraper import XScraper
+from .xquik_client import XquikClient, normalize_username
 
 console = Console()
 
@@ -35,7 +39,7 @@ console = Console()
 @click.group()
 @click.version_option("1.0.0", prog_name="x-analyzer")
 def cli():
-    """🐦 X-Tweet-Analyzer — Extract and analyze tweets from any X/Twitter profile."""
+    """🐦 X-Tweet-Analyzer - Extract and analyze tweets from any X/Twitter profile."""
     pass
 
 
@@ -46,27 +50,66 @@ def cli():
 @click.option("--until", "-u", default=None, help="Until date YYYY-MM-DD")
 @click.option("--output", "-o", default="output", help="Output directory")
 @click.option("--db", default="data/tweets.db", help="Database path")
-@click.option("--format", "-f", "export_format",
-              type=click.Choice(["json", "csv", "markdown", "all"]), default="all")
+@click.option(
+    "--source",
+    type=click.Choice(["twscrape", "xquik"]),
+    default="twscrape",
+    show_default=True,
+    help="Tweet source",
+)
+@click.option(
+    "--format",
+    "-f",
+    "export_format",
+    type=click.Choice(["json", "csv", "markdown", "all"]),
+    default="all",
+)
 @click.option("--no-export", is_flag=True, help="Skip export, DB only")
 @click.option("--verbose", "-v", is_flag=True)
-def scrape(username, limit, since, until, output, db, export_format, no_export, verbose):
+def scrape(
+    username, limit, since, until, output, db, source, export_format, no_export, verbose
+):
     """Scrape all tweets from a profile.
-    
+
     USERNAME can be a handle (@user), URL, or username.
-    
+
     Examples:\n
         x-analyzer scrape elonmusk\n
         x-analyzer scrape @naval --limit 1000\n
         x-analyzer scrape https://x.com/sama --format csv
     """
-    asyncio.run(_scrape(username, limit, since, until, output, db, export_format, no_export, verbose))
+    asyncio.run(
+        _scrape(
+            username,
+            limit,
+            since,
+            until,
+            output,
+            db,
+            source,
+            export_format,
+            no_export,
+            verbose,
+        )
+    )
 
 
-async def _scrape(username, limit, since, until, output, db_path, export_format, no_export, verbose):
-    username = username.lstrip("@")
-    if "x.com/" in username or "twitter.com/" in username:
-        username = username.split("/")[-1].split("?")[0]
+async def _scrape(
+    username,
+    limit,
+    since,
+    until,
+    output,
+    db_path,
+    source,
+    export_format,
+    no_export,
+    verbose,
+):
+    try:
+        username = normalize_username(username)
+    except ValueError as error:
+        raise click.ClickException(str(error)) from error
 
     config = Config.from_env()
     config.output_dir = output
@@ -76,29 +119,47 @@ async def _scrape(username, limit, since, until, output, db_path, export_format,
     since_dt = datetime.strptime(since, "%Y-%m-%d") if since else None
     until_dt = datetime.strptime(until, "%Y-%m-%d") if until else None
 
-    console.print(Panel(
-        f"[bold]Profile:[/bold] [cyan]@{username}[/cyan]\n"
-        f"[bold]Limit:[/bold] {limit or 'All'}  [bold]Format:[/bold] {export_format}",
-        title="🐦 X-Tweet-Analyzer — Scraping",
-        border_style="blue"
-    ))
+    console.print(
+        Panel(
+            f"[bold]Profile:[/bold] [cyan]@{username}[/cyan]\n"
+            f"[bold]Limit:[/bold] {limit or 'All'}  [bold]Format:[/bold] {export_format}\n"
+            f"[bold]Source:[/bold] {source}",
+            title="🐦 X-Tweet-Analyzer - Scraping",
+            border_style="blue",
+        )
+    )
 
     async with Database(db_path) as db:
-        scraper = XScraper(config, db)
-        await scraper.setup_accounts()
+        if source == "xquik":
+            if not config.xquik_api_key:
+                raise click.ClickException("Set XQUIK_API_KEY to use the Xquik source.")
+            tweet_stream = XquikClient(
+                api_key=config.xquik_api_key,
+                base_url=config.xquik_base_url,
+            ).search_profile(username, limit=limit, since=since_dt, until=until_dt)
+        else:
+            scraper = XScraper(config, db)
+            await scraper.setup_accounts()
+            tweet_stream = scraper.scrape_profile(
+                username, limit=limit, since=since_dt, until=until_dt
+            )
 
         original_count = reply_count = retweet_count = 0
         all_tweets = []
 
         with Progress(
-            SpinnerColumn(), TextColumn("[progress.description]{task.description}"),
-            BarColumn(), TaskProgressColumn(), console=console,
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TaskProgressColumn(),
+            console=console,
         ) as progress:
             task = progress.add_task(f"[cyan]Scraping @{username}...", total=limit)
 
-            async for tweet in scraper.scrape_profile(
-                username, limit=limit, since=since_dt, until=until_dt
-            ):
+            async for tweet in tweet_stream:
+                if source == "xquik":
+                    await db.save_tweet(tweet)
+
                 if tweet.category == "original":
                     original_count += 1
                 elif tweet.category == "reply":
@@ -110,7 +171,9 @@ async def _scrape(username, limit, since, until, output, db_path, export_format,
                 progress.advance(task)
 
                 if verbose:
-                    console.print(f"  [{tweet.category}] {tweet.date} — {tweet.content[:80]}...")
+                    console.print(
+                        f"  [{tweet.category}] {tweet.date} - {tweet.content[:80]}..."
+                    )
 
         total = original_count + reply_count + retweet_count
 
@@ -118,12 +181,21 @@ async def _scrape(username, limit, since, until, output, db_path, export_format,
         table.add_column("Category", style="bold")
         table.add_column("Count", justify="right")
         table.add_column("Percentage", justify="right")
-        table.add_row("✍️ Original", str(original_count),
-                      f"{original_count/total*100:.1f}%" if total else "0%")
-        table.add_row("💬 Replies", str(reply_count),
-                      f"{reply_count/total*100:.1f}%" if total else "0%")
-        table.add_row("🔁 Retweets", str(retweet_count),
-                      f"{retweet_count/total*100:.1f}%" if total else "0%")
+        table.add_row(
+            "✍️ Original",
+            str(original_count),
+            f"{original_count/total*100:.1f}%" if total else "0%",
+        )
+        table.add_row(
+            "💬 Replies",
+            str(reply_count),
+            f"{reply_count/total*100:.1f}%" if total else "0%",
+        )
+        table.add_row(
+            "🔁 Retweets",
+            str(retweet_count),
+            f"{retweet_count/total*100:.1f}%" if total else "0%",
+        )
         table.add_row("[bold]TOTAL[/bold]", f"[bold]{total}[/bold]", "100%")
         console.print(table)
 
@@ -147,10 +219,19 @@ async def _scrape(username, limit, since, until, output, db_path, export_format,
 @cli.command()
 @click.argument("username")
 @click.option("--db", default="data/tweets.db")
-@click.option("--category", "-c",
-              type=click.Choice(["all", "original", "reply", "retweet"]), default="all")
-@click.option("--format", "-f", "export_format",
-              type=click.Choice(["json", "csv", "markdown", "all"]), default="all")
+@click.option(
+    "--category",
+    "-c",
+    type=click.Choice(["all", "original", "reply", "retweet"]),
+    default="all",
+)
+@click.option(
+    "--format",
+    "-f",
+    "export_format",
+    type=click.Choice(["json", "csv", "markdown", "all"]),
+    default="all",
+)
 @click.option("--output", "-o", default="output")
 def export(username, db, category, export_format, output):
     """Export tweets from database to files."""
@@ -159,7 +240,9 @@ def export(username, db, category, export_format, output):
 
 async def _export_cmd(username, db_path, category, export_format, output):
     async with Database(db_path) as db:
-        tweets = await db.get_tweets(username, category=category if category != "all" else None)
+        tweets = await db.get_tweets(
+            username, category=category if category != "all" else None
+        )
         stats = await db.get_stats(username)
         if not tweets:
             console.print(f"[red]No tweets found for @{username}[/red]")
@@ -213,22 +296,25 @@ async def _stats(username, db_path):
         if not s or not s.get("total"):
             console.print(f"[red]No data for @{username}[/red]")
             return
-        console.print(Panel(
-            f"[bold]Total:[/bold] {s.get('total', 0):,}\n"
-            f"[bold]Originals:[/bold] {s.get('originals', 0):,}  "
-            f"[bold]Replies:[/bold] {s.get('replies', 0):,}  "
-            f"[bold]Retweets:[/bold] {s.get('retweets', 0):,}\n"
-            f"[bold]Total Likes:[/bold] {s.get('total_likes', 0) or 0:,}  "
-            f"[bold]Avg Likes:[/bold] {(s.get('avg_likes') or 0):.1f}\n"
-            f"[bold]Date Range:[/bold] {s.get('oldest_tweet', '?')} → {s.get('newest_tweet', '?')}",
-            title=f"📊 @{username}", border_style="green"
-        ))
+        console.print(
+            Panel(
+                f"[bold]Total:[/bold] {s.get('total', 0):,}\n"
+                f"[bold]Originals:[/bold] {s.get('originals', 0):,}  "
+                f"[bold]Replies:[/bold] {s.get('replies', 0):,}  "
+                f"[bold]Retweets:[/bold] {s.get('retweets', 0):,}\n"
+                f"[bold]Total Likes:[/bold] {s.get('total_likes', 0) or 0:,}  "
+                f"[bold]Avg Likes:[/bold] {(s.get('avg_likes') or 0):.1f}\n"
+                f"[bold]Date Range:[/bold] {s.get('oldest_tweet', '?')} → {s.get('newest_tweet', '?')}",
+                title=f"📊 @{username}",
+                border_style="green",
+            )
+        )
         if tags:
             table = Table(title="Top Hashtags")
             table.add_column("Hashtag")
             table.add_column("Count", justify="right")
             for tag in tags:
-                table.add_row(f"#{tag['hashtag']}", str(tag['count']))
+                table.add_row(f"#{tag['hashtag']}", str(tag["count"]))
             console.print(table)
 
 
@@ -239,7 +325,9 @@ async def _stats(username, db_path):
 def serve(host, port, db):
     """Start the web interface."""
     import uvicorn
+
     from .api import create_app
+
     app = create_app(db_path=db)
     console.print(f"[green]🌐 Web UI at http://{host}:{port}[/green]")
     uvicorn.run(app, host=host, port=port)
